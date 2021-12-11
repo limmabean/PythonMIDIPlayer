@@ -4,9 +4,9 @@ import mido
 import zmq
 import threading
 from mido import MidiFile
-import glob, os
+import glob
 
-random.seed(None)
+midi_index_lock = threading.Lock()
 context = zmq.Context()
 socket = context.socket(zmq.REP)
 socket.bind("tcp://*:5555")
@@ -16,7 +16,8 @@ drum_files = []
 note_files = []
 drum_mid = []
 note_mid = []
-random_midi_index = 0
+midi_index = 0
+
 
 def unity_server():
     while True:
@@ -24,10 +25,11 @@ def unity_server():
         message = socket.recv()
         print("Received request: %s" % message)
         #  Do some 'work'.
-        #  Try reducing sleep time to 0.01 to see how blazingly fast it communicates
-        #  In the real world usage, you just need to replace time.sleep() with
-        #  whatever work you want python to do, maybe a machine learning task?
-        time.sleep(1)
+        # Eventually this will be controlled by something not random. Instead based on input from the Unity Server
+        midi_index_lock.acquire()
+        global midi_index
+        midi_index = random.randint(0, 50)
+        midi_index_lock.release()
         #  Send reply back to client
         #  In the real world usage, after you finish your work, send your output here
         send_message = str(random.randint(0, 88)) + ", " + str(random.random()) + ", " + str(timer)
@@ -36,24 +38,29 @@ def unity_server():
 
 
 def midi_out(port_name):
-    global random_midi_index
+    global midi_index
     # Import track details
     with mido.open_output(port_name, virtual=True) as outport:
         while True:
             if port_name == "NOTES":
-                print("Playing file: " + note_files[random_midi_index % len(note_files)])
-                for msg in note_mid[random_midi_index % len(note_mid)].play():
+                print("Playing file: " + note_files[midi_index % len(note_files)])
+                for msg in note_mid[midi_index % len(note_mid)].play():
                     outport.send(msg)
-                random_midi_index = random.randint(0, 50)
+                midi_index_lock.acquire()
+                # Eventually this will be controlled by something not random
+                midi_index = random.randint(0, 50)
+                midi_index_lock.release()
             elif port_name == "DRUMS":
-                print("Playing file: " + drum_files[random_midi_index % len(drum_files)])
-                for msg in drum_mid[random_midi_index % len(drum_mid)].play():
+                print("Playing file: " + drum_files[midi_index % len(drum_files)])
+                for msg in drum_mid[midi_index % len(drum_mid)].play():
                     outport.send(msg)
-                random_midi_index = random.randint(0, 50)
+                midi_index_lock.acquire()
+                # Eventually this will be controlled by something not random
+                midi_index = random.randint(0, 50)
+                midi_index_lock.release()
 
 
-
-class myThread(threading.Thread):
+class MyThread(threading.Thread):
     def __init__(self, thread_id, name, thread_type):
         threading.Thread.__init__(self)
         self.thread_id = thread_id
@@ -70,10 +77,13 @@ class myThread(threading.Thread):
 
 
 if __name__ == '__main__':
-    print("Creating threads...")
-    notes_thread = myThread(1, "NOTES", "MIDI")
-    drums_thread = myThread(2, "DRUMS", "MIDI")
-    unity_server_thread = myThread(3, "UNITY_SERVER", "SERVER")
+    print("Creating threads and lock...")
+    notes_thread = MyThread(1, "NOTES", "MIDI")
+    drums_thread = MyThread(2, "DRUMS", "MIDI")
+    unity_server_thread = MyThread(3, "UNITY_SERVER", "SERVER")
+
+    print("Setting random seed...")
+    random.seed()
 
     print("Loading midi files...")
     for file in glob.glob("./midi/drums/*.mid"):

@@ -140,3 +140,4 @@ python-rtmidi==1.4.9
 requests==2.26.0
 urllib3==1.26.7
 yarg==0.1.9
+pyzmq~=22.3.0
